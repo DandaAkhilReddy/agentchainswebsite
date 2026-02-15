@@ -1,6 +1,16 @@
 [build]
   command = "npm run build"
   publish = "dist"
+  base = "/"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+[context.production]
+  command = "npm run build"
+
+[context.branch-deploy]
+  command = "npm run build"
 
 [[redirects]]
   from = "/*"

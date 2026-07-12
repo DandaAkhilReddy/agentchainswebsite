@@ -16,6 +16,11 @@
     "MSJOBS_MAX_JOBS": "15",
     "MSJOBS_MAX_PAGES": "4",
     "MSJOBS_SCHEDULE": "0 30 7 * * *",
+    "MSJOBS_SOURCE": "api",
+
+    "MSJOBS_INDIA_ENABLED": "true",
+    "MSJOBS_INDIA_LOCATIONS": "India",
+    "MSJOBS_INDIA_SCHEDULE": "0 30 3 * * *",
 
     "ACS_CONNECTION_STRING": "",
     "ACS_SENDER_ADDRESS": "",

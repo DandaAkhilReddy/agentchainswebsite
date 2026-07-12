@@ -32,6 +32,15 @@ param jobQuery string = 'Software Engineer'
 @description('Comma-separated location filters.')
 param jobLocations string = 'United States'
 
+@description('Enable the second (India) daily digest.')
+param indiaEnabled bool = true
+
+@description('India edition location filter.')
+param indiaLocations string = 'India'
+
+@description('India edition timer schedule (NCRONTAB). Default 09:00 IST.')
+param indiaSchedule string = '0 30 3 * * *'
+
 var suffix = uniqueString(resourceGroup().id)
 var storageName = toLower('${namePrefix}${take(suffix, 8)}')
 var funcAppName = '${namePrefix}-func-${take(suffix, 6)}'
@@ -101,6 +110,11 @@ resource funcApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'MSJOBS_MAX_JOBS', value: '15' }
         { name: 'MSJOBS_MAX_PAGES', value: '4' }
         { name: 'MSJOBS_SCHEDULE', value: schedule }
+        { name: 'MSJOBS_SOURCE', value: 'api' }
+        // India edition (second daily digest; set ENABLED=false to turn off)
+        { name: 'MSJOBS_INDIA_ENABLED', value: string(indiaEnabled) }
+        { name: 'MSJOBS_INDIA_LOCATIONS', value: indiaLocations }
+        { name: 'MSJOBS_INDIA_SCHEDULE', value: indiaSchedule }
       ]
     }
     httpsOnly: true

@@ -88,9 +88,11 @@ flowchart TD
 ```
 .
 ├── api/                       Azure Functions (TypeScript) + shared pipeline lib
-│   ├── src/lib/               fetch, format, storage, email, config (reusable core)
-│   ├── src/functions/         dailyDigest (timer), posts (HTTP), runNow (HTTP)
-│   └── src/scripts/digest.ts  local CLI entry point
+│   ├── src/lib/               config (editions), source (pluggable), fetch,
+│   │                          format, storage, email — the reusable core
+│   ├── src/functions/         dailyDigest + dailyDigestIndia (timers),
+│   │                          posts (HTTP), runNow (HTTP)
+│   └── src/scripts/digest.ts  local CLI entry point (runs all editions)
 ├── web/                       self-contained static dashboard (no build step)
 │   ├── index.html             cards with Copy buttons, reads /api/posts
 │   └── staticwebapp.config.json
@@ -111,17 +113,22 @@ npm install
 npm run digest
 ```
 
-You'll see each post printed in the terminal and a file written to
-`api/output/<date>.md` with fenced blocks you can copy. Tune what you get with
-env vars (or a `.env` file in the repo root) — see `.env.example`:
+This runs **all editions** (US + India by default), prints each post in the
+terminal, and writes a file per edition to `api/output/<date>-<edition>.md`.
+Tune what you get with env vars (or a `.env` file in the repo root) — see
+`.env.example`:
 
 ```bash
-MSJOBS_QUERY="Software Engineer" MSJOBS_LOCATIONS="United States" \
-MSJOBS_MAX_AGE_HOURS=48 MSJOBS_MAX_JOBS=10 npm run digest
+# just the US edition, wider window
+MSJOBS_MAX_AGE_HOURS=48 MSJOBS_MAX_JOBS=10 npm run digest -- --edition=us
+
+# India, senior roles only
+MSJOBS_INDIA_TITLE_INCLUDES="Senior,Principal" npm run digest -- --edition=india
 ```
 
-Useful flags: `--dedup` (respect blob dedup state), `--save` (persist to Azure
-if `AZURE_STORAGE_CONNECTION_STRING` is set), `--email` (send via ACS).
+Useful flags: `--edition=<key>` (run one edition), `--dedup` (respect blob dedup
+state), `--save` (persist to Azure if `AZURE_STORAGE_CONNECTION_STRING` is set),
+`--email` (send via ACS).
 
 ---
 
@@ -159,9 +166,42 @@ cd api && npm ci && npm run build && func azure functionapp publish <functionApp
 ### Endpoints
 | Route | Method | Purpose |
 | --- | --- | --- |
-| `/api/posts` | GET | Latest saved digest (JSON) — the dashboard reads this. `?generate=1` builds one on first run. |
-| `/api/run` | GET/POST | Run the pipeline on demand. `?all=1` ignores dedup. (function-key protected) |
-| `dailyDigest` | timer | Scheduled daily run (no HTTP surface). |
+| `/api/posts` | GET | Latest saved digest (JSON) — the dashboard reads this. `?edition=us\|india` picks the edition; `?generate=1` builds one on first run. |
+| `/api/run` | GET/POST | Run the pipeline on demand. `?edition=` picks the edition, `?all=1` ignores dedup. (function-key protected) |
+| `dailyDigest` | timer | Scheduled daily US run. |
+| `dailyDigestIndia` | timer | Scheduled daily India run (only when the India edition is enabled). |
+
+---
+
+## Editions (US + India)
+
+The pipeline runs one or more **editions** — independent digests with their own
+filters, schedule, storage, and dashboard tab. Two ship by default:
+
+| Edition | Locations | Default schedule | Toggle |
+| --- | --- | --- | --- |
+| `us` | United States | 07:30 UTC | always on |
+| `india` | India | 03:30 UTC (09:00 IST) | `MSJOBS_INDIA_ENABLED=false` to disable |
+
+Each has its own timer function, its own `editions/<key>/…` blob subtree (so
+de-dup never bleeds across editions), and its own dashboard dropdown entry
+(`?edition=india`). Every `MSJOBS_*` knob has an `MSJOBS_INDIA_*` twin. Adding a
+third edition (e.g. UK) is a few lines in `api/src/lib/config.ts` plus one timer.
+
+## Job sources (pluggable)
+
+Fetching sits behind a `JobSource` interface (`api/src/lib/source.ts`):
+
+- **`api`** (default) — Microsoft's careers JSON API. This is the same endpoint
+  the careers site itself calls and that virtually every "MS jobs scraper" uses
+  under the hood. Fast, structured, and light enough for the free Consumption plan.
+- **`playwright`** (stubbed) — a documented drop-in browser fallback for the day
+  Microsoft locks the JSON endpoint down. It's intentionally **not** implemented
+  or wired to a dependency, because a headless browser won't run on Consumption
+  (you'd move to a Premium/container plan first). See
+  `api/src/lib/playwrightSource.ts` for the exact activation steps.
+
+Select per-edition with `MSJOBS_SOURCE` / `MSJOBS_INDIA_SOURCE`.
 
 ---
 
@@ -179,7 +219,10 @@ a local `.env`). Full list with defaults in [`.env.example`](./.env.example).
 | `MSJOBS_MAX_AGE_HOURS` | `24` | Only jobs posted within this window |
 | `MSJOBS_MAX_JOBS` | `15` | Cap per digest |
 | `MSJOBS_MAX_PAGES` | `4` | Search pages to scan (20/page) |
-| `MSJOBS_SCHEDULE` | `0 30 7 * * *` | Timer (NCRONTAB) |
+| `MSJOBS_SCHEDULE` | `0 30 7 * * *` | US timer (NCRONTAB) |
+| `MSJOBS_SOURCE` | `api` | Fetch source: `api` or `playwright` |
+| `MSJOBS_INDIA_ENABLED` | `true` | Enable the India edition |
+| `MSJOBS_INDIA_*` | *(mirror of `MSJOBS_*`)* | India edition overrides (locations `India`, schedule `0 30 3 * * *`) |
 | `AZURE_STORAGE_CONNECTION_STRING` | *(none)* | Enables blob output + dedup |
 | `ACS_CONNECTION_STRING` / `ACS_SENDER_ADDRESS` / `MSJOBS_EMAIL_TO` | *(none)* | Optional email delivery |
 

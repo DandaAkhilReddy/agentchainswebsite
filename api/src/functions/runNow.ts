@@ -1,7 +1,7 @@
-/** HTTP POST/GET /api/run — trigger a digest run on demand (manual refresh). */
+/** HTTP POST/GET /api/run[?edition=us|india][&all=1] — trigger a digest run on demand. */
 import { app, type HttpRequest, type HttpResponseInit, type InvocationContext } from "@azure/functions";
-import { loadConfig } from "../lib/config.js";
-import { runDigest } from "../lib/pipeline.js";
+import { loadConfig, getEdition } from "../lib/config.js";
+import { runEdition } from "../lib/pipeline.js";
 
 const cfg = loadConfig();
 
@@ -12,8 +12,9 @@ export async function runNow(req: HttpRequest, context: InvocationContext): Prom
     "Cache-Control": "no-store",
   };
   try {
+    const edition = getEdition(cfg, req.query.get("edition"));
     const ignoreDedup = req.query.get("all") === "1";
-    const { digest, emailed, totalFetched } = await runDigest(cfg, {
+    const { digest, emailed, totalFetched } = await runEdition(edition, cfg, {
       ignoreDedup,
       log: (m) => context.log(m),
     });
@@ -21,6 +22,8 @@ export async function runNow(req: HttpRequest, context: InvocationContext): Prom
       status: 200,
       headers: cors,
       jsonBody: {
+        edition: digest.edition,
+        editionLabel: digest.editionLabel,
         date: digest.date,
         count: digest.count,
         totalFetched,

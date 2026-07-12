@@ -34,6 +34,10 @@ export interface RenderedPost {
 
 /** The full daily digest persisted to storage and served to the dashboard. */
 export interface Digest {
+  /** Edition key this digest belongs to, e.g. "us" or "india". */
+  edition: string;
+  /** Human label for the edition, e.g. "United States". */
+  editionLabel: string;
   /** Calendar date the digest was generated for (YYYY-MM-DD). */
   date: string;
   /** ISO timestamp the digest was generated. */

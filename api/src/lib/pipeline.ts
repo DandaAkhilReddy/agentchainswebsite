@@ -1,6 +1,6 @@
-/** Orchestrates the end-to-end digest run, shared by the timer, HTTP, and CLI entry points. */
-import { loadConfig, type AppConfig } from "./config.js";
-import { fetchFreshJobs } from "./msCareers.js";
+/** Orchestrates a per-edition digest run, shared by the timer, HTTP, and CLI entry points. */
+import { loadConfig, type AppConfig, type Edition } from "./config.js";
+import { getSource } from "./source.js";
 import { renderAll } from "./format.js";
 import { DigestStore } from "./store.js";
 import { sendDigestEmail } from "./email.js";
@@ -26,26 +26,34 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-export async function runDigest(
+/** Run the digest for a single edition. */
+export async function runEdition(
+  edition: Edition,
   cfg: AppConfig = loadConfig(),
   opts: RunOptions = {},
 ): Promise<RunResult> {
   const log = opts.log ?? (() => {});
-  const store = new DigestStore(cfg);
+  const store = new DigestStore(cfg, edition.key);
 
-  log(`Fetching Microsoft jobs (query="${cfg.query}", locations=${cfg.locations.join("/") || "any"})`);
-  const fetched = await fetchFreshJobs(cfg);
-  log(`Fetched ${fetched.length} job(s) within ${cfg.maxAgeHours}h.`);
+  log(
+    `[${edition.key}] fetching via '${edition.source}' ` +
+      `(query="${edition.query}", locations=${edition.locations.join("/") || "any"})`,
+  );
+  const source = await getSource(edition.source);
+  const fetched = await source.fetchFreshJobs(edition);
+  log(`[${edition.key}] fetched ${fetched.length} job(s) within ${edition.maxAgeHours}h.`);
 
   let jobs = fetched;
   if (!opts.ignoreDedup && store.enabled) {
     const posted = await store.loadPostedIds();
     jobs = fetched.filter((j) => !posted.has(j.id));
-    log(`${jobs.length} new after de-dup (${fetched.length - jobs.length} already posted).`);
+    log(`[${edition.key}] ${jobs.length} new after de-dup (${fetched.length - jobs.length} seen).`);
   }
 
   const posts = renderAll(jobs);
   const digest: Digest = {
+    edition: edition.key,
+    editionLabel: edition.label,
     date: today(),
     generatedAt: new Date().toISOString(),
     count: posts.length,
@@ -55,14 +63,26 @@ export async function runDigest(
   if (!opts.skipSave && store.enabled) {
     await store.saveDigest(digest);
     await store.recordPostedIds(jobs.map((j) => j.id));
-    log("Saved digest + dedup state to blob storage.");
+    log(`[${edition.key}] saved digest + dedup state to blob storage.`);
   }
 
   let emailed = false;
   if (!opts.skipEmail) {
     emailed = await sendDigestEmail(cfg, digest);
-    if (emailed) log(`Emailed digest to ${cfg.emailTo.join(", ")}.`);
+    if (emailed) log(`[${edition.key}] emailed digest to ${cfg.emailTo.join(", ")}.`);
   }
 
   return { digest, emailed, totalFetched: fetched.length };
+}
+
+/** Run every configured edition in sequence. */
+export async function runAllEditions(
+  cfg: AppConfig = loadConfig(),
+  opts: RunOptions = {},
+): Promise<RunResult[]> {
+  const results: RunResult[] = [];
+  for (const edition of cfg.editions) {
+    results.push(await runEdition(edition, cfg, opts));
+  }
+  return results;
 }

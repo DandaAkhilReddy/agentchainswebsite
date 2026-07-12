@@ -28,7 +28,7 @@ function digestToHtml(digest: Digest): string {
     )
     .join("\n");
   return `<div style="max-width:640px;margin:0 auto">
-    <h2 style="font-family:Segoe UI,Arial,sans-serif">Microsoft jobs → LinkedIn — ${digest.date}</h2>
+    <h2 style="font-family:Segoe UI,Arial,sans-serif">Microsoft jobs → LinkedIn — ${digest.editionLabel} — ${digest.date}</h2>
     <p style="font-family:Segoe UI,Arial,sans-serif;color:#444">${digest.count} new posting(s). Copy any block below into LinkedIn and add your image.</p>
     ${blocks}
   </div>`;
@@ -50,7 +50,7 @@ export async function sendDigestEmail(cfg: AppConfig, digest: Digest): Promise<b
   const poller = await client.beginSend({
     senderAddress: cfg.acsSender,
     content: {
-      subject: `Microsoft jobs → LinkedIn (${digest.count}) — ${digest.date}`,
+      subject: `Microsoft jobs → LinkedIn · ${digest.editionLabel} (${digest.count}) — ${digest.date}`,
       html: digestToHtml(digest),
     },
     recipients: { to: cfg.emailTo.map((address) => ({ address })) },

@@ -9,7 +9,7 @@
  * Nothing here requires auth. We send a browser-like User-Agent because the CDN
  * rejects some default agents.
  */
-import type { AppConfig } from "./config.js";
+import type { Edition } from "./config.js";
 import type { Job } from "./types.js";
 
 const SEARCH_URL = "https://gcsservices.careers.microsoft.com/search/api/v1/search";
@@ -49,7 +49,7 @@ async function getJson(url: string): Promise<any> {
   return res.json();
 }
 
-function buildSearchUrl(cfg: AppConfig, page: number): string {
+function buildSearchUrl(edition: Edition, page: number): string {
   const params = new URLSearchParams({
     l: "en_us",
     pg: String(page),
@@ -57,10 +57,10 @@ function buildSearchUrl(cfg: AppConfig, page: number): string {
     o: "Recent",
     flt: "true",
   });
-  if (cfg.query) params.set("q", cfg.query);
+  if (edition.query) params.set("q", edition.query);
   // The API accepts a single location hint via `lc`; broader location filtering
   // is done client-side against each job's `locations` array.
-  if (cfg.locations.length === 1) params.set("lc", cfg.locations[0]);
+  if (edition.locations.length === 1) params.set("lc", edition.locations[0]);
   return `${SEARCH_URL}?${params.toString()}`;
 }
 
@@ -112,8 +112,8 @@ export function jobUrl(id: string): string {
 }
 
 /** Fetch one page of search results, normalized (without descriptions yet). */
-async function fetchSearchPage(cfg: AppConfig, page: number): Promise<RawSearchJob[]> {
-  const data = await getJson(buildSearchUrl(cfg, page));
+async function fetchSearchPage(edition: Edition, page: number): Promise<RawSearchJob[]> {
+  const data = await getJson(buildSearchUrl(edition, page));
   const jobs = data?.operationResult?.result?.jobs;
   return Array.isArray(jobs) ? jobs : [];
 }
@@ -159,29 +159,29 @@ function matchesTitle(title: string, includes: string[], excludes: string[]): bo
  * Fetch fresh Microsoft jobs matching the configured filters, newest first,
  * each enriched with a description teaser and pay range.
  */
-export async function fetchFreshJobs(cfg: AppConfig): Promise<Job[]> {
+export async function fetchFreshJobs(edition: Edition): Promise<Job[]> {
   const raw: RawSearchJob[] = [];
-  for (let page = 1; page <= cfg.maxPages; page++) {
-    const pageJobs = await fetchSearchPage(cfg, page);
+  for (let page = 1; page <= edition.maxPages; page++) {
+    const pageJobs = await fetchSearchPage(edition, page);
     if (pageJobs.length === 0) break;
     raw.push(...pageJobs);
     // Results are ordered newest-first; once a page is entirely too old we stop.
-    const allTooOld = pageJobs.every((j) => ageHours(j.postingDate) > cfg.maxAgeHours);
+    const allTooOld = pageJobs.every((j) => ageHours(j.postingDate) > edition.maxAgeHours);
     if (allTooOld) break;
   }
 
   const filtered = raw.filter(
     (j) =>
-      ageHours(j.postingDate) <= cfg.maxAgeHours &&
-      matchesLocations(j, cfg.locations) &&
-      matchesTitle(j.title, cfg.titleIncludes, cfg.titleExcludes),
+      ageHours(j.postingDate) <= edition.maxAgeHours &&
+      matchesLocations(j, edition.locations) &&
+      matchesTitle(j.title, edition.titleIncludes, edition.titleExcludes),
   );
 
   // De-dup by id (a role can appear under multiple locations) and cap.
   const seen = new Set<string>();
   const unique = filtered.filter((j) => (seen.has(j.jobId) ? false : seen.add(j.jobId)));
   unique.sort((a, b) => +new Date(b.postingDate) - +new Date(a.postingDate));
-  const capped = unique.slice(0, cfg.maxJobs);
+  const capped = unique.slice(0, edition.maxJobs);
 
   // Enrich with details (bounded concurrency to be polite to the API).
   const jobs: Job[] = [];

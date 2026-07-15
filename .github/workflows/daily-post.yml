@@ -1,0 +1,94 @@
+name: Daily Microsoft Jobs LinkedIn Post
+
+# Free daily runner (no Azure needed). Fetches Microsoft roles posted in the
+# lookback window, formats copy-paste-ready LinkedIn posts, and delivers them as
+# a GitHub Issue (you get GitHub's email notification) + optionally a Gmail email.
+# The Azure Functions path in /api + /infra remains available as an alternative.
+
+on:
+  schedule:
+    # 11:00 UTC = 07:00 EDT (06:00 EST). Edit to taste.
+    - cron: "0 11 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    env:
+      # ---- Edit these to configure what you pull ----
+      FILTER_COUNTRY: "United States" # "United States", "India", or "" for all
+      MAX_JOBS_TOTAL: "30" # cap on jobs per day
+      LOOKBACK_HOURS: "24" # posting window
+      FILTER_TITLE_KEYWORDS: "" # e.g. "software engineer,senior" (blank = no filter)
+      # -----------------------------------------------
+      GMAIL_USERNAME: ${{ secrets.GMAIL_USERNAME }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        working-directory: api
+        run: npm ci
+
+      - name: Generate digest
+        working-directory: api
+        env:
+          MSJOBS_LOCATIONS: ${{ env.FILTER_COUNTRY }}
+          MSJOBS_LABEL: ${{ env.FILTER_COUNTRY || 'Microsoft' }}
+          MSJOBS_MAX_JOBS: ${{ env.MAX_JOBS_TOTAL }}
+          MSJOBS_MAX_AGE_HOURS: ${{ env.LOOKBACK_HOURS }}
+          MSJOBS_TITLE_INCLUDES: ${{ env.FILTER_TITLE_KEYWORDS }}
+          MSJOBS_INDIA_ENABLED: "false" # single edition for the daily post
+        run: npm run digest
+
+      - name: Read summary
+        id: summary
+        run: |
+          echo "count=$(jq -r '.count' output/summary.json)" >> "$GITHUB_OUTPUT"
+          echo "date=$(jq -r '.date' output/summary.json)" >> "$GITHUB_OUTPUT"
+        working-directory: api
+
+      - name: Create GitHub Issue with the post
+        if: steps.summary.outputs.count != '0'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('api/output/post.txt', 'utf8');
+            const { count, date } = JSON.parse(fs.readFileSync('api/output/summary.json', 'utf8'));
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Microsoft → LinkedIn posts — ${date} (${count})`,
+              body: 'Copy any block below into LinkedIn and add your image.\n\n```text\n' + body + '\n```',
+            });
+
+      - name: Email the post (optional)
+        if: steps.summary.outputs.count != '0' && env.GMAIL_USERNAME != ''
+        continue-on-error: true
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.GMAIL_USERNAME }}
+          password: ${{ secrets.GMAIL_APP_PASSWORD }}
+          from: Microsoft Jobs Bot <${{ secrets.GMAIL_USERNAME }}>
+          to: ${{ secrets.MAIL_TO }}
+          subject: "Microsoft → LinkedIn posts — ${{ steps.summary.outputs.date }} (${{ steps.summary.outputs.count }})"
+          body: file://api/output/post.txt
+
+      - name: Upload post.txt artifact
+        if: steps.summary.outputs.count != '0'
+        uses: actions/upload-artifact@v4
+        with:
+          name: linkedin-post-${{ steps.summary.outputs.date }}
+          path: api/output/post.txt
+          if-no-files-found: ignore

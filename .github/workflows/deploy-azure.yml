@@ -1,0 +1,104 @@
+name: Deploy to Azure
+
+# One-click deploy of the whole Azure pipeline (Storage + Function App +
+# Static Web App) from CI. Authenticates with Azure via OIDC — no passwords or
+# publish profiles stored in the repo. See README "Deploy from CI (Azure OIDC)"
+# for the one-time app-registration setup and the three secrets this needs.
+
+on:
+  workflow_dispatch:
+    inputs:
+      resource_group:
+        description: Resource group name
+        default: rg-msjobs
+      location:
+        description: Azure region
+        default: eastus2
+      prefix:
+        description: Resource name prefix
+        default: msjobs
+
+permissions:
+  id-token: write # required for azure/login OIDC
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Provision infrastructure (Bicep)
+        id: infra
+        run: |
+          set -euo pipefail
+          az group create -n "${{ inputs.resource_group }}" -l "${{ inputs.location }}" -o none
+          outputs=$(az deployment group create \
+            -g "${{ inputs.resource_group }}" \
+            -f infra/main.bicep \
+            -p namePrefix="${{ inputs.prefix }}" swaLocation="${{ inputs.location }}" \
+            --query properties.outputs -o json)
+          echo "func_app=$(echo "$outputs" | jq -r '.functionAppName.value')" >> "$GITHUB_OUTPUT"
+          echo "api_base=$(echo "$outputs" | jq -r '.apiBase.value')" >> "$GITHUB_OUTPUT"
+          echo "swa_name=$(echo "$outputs" | jq -r '.staticWebAppName.value')" >> "$GITHUB_OUTPUT"
+          echo "swa_url=$(echo "$outputs" | jq -r '.staticWebAppUrl.value')" >> "$GITHUB_OUTPUT"
+          echo "email_to=$(echo "$outputs" | jq -r '.emailTo.value')" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build Function App
+        working-directory: api
+        run: |
+          npm ci
+          npm run build
+          npm prune --omit=dev
+
+      - name: Deploy Function App
+        uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ steps.infra.outputs.func_app }}
+          package: api
+          scm-do-build-during-deployment: false
+          enable-oryx-build: false
+
+      - name: Get Static Web App deployment token
+        id: swa
+        run: |
+          token=$(az staticwebapp secrets list \
+            -n "${{ steps.infra.outputs.swa_name }}" \
+            -g "${{ inputs.resource_group }}" \
+            --query properties.apiKey -o tsv)
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+
+      - name: Wire dashboard to the deployed API base
+        run: |
+          sed -i "s#window.API_BASE = window.API_BASE || \"\";#window.API_BASE = \"${{ steps.infra.outputs.api_base }}\";#" web/index.html
+
+      - name: Deploy dashboard (Static Web Apps)
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ steps.swa.outputs.token }}
+          action: upload
+          app_location: web
+          skip_app_build: true
+          skip_api_build: true
+
+      - name: Summary
+        run: |
+          {
+            echo "### Deployed 🎉"
+            echo "- Dashboard: ${{ steps.infra.outputs.swa_url }}"
+            echo "- API base: ${{ steps.infra.outputs.api_base }}"
+            echo "- Function App: ${{ steps.infra.outputs.func_app }} (daily timers active)"
+            echo "- Daily email → ${{ steps.infra.outputs.email_to }} (via Azure Communication Services)"
+          } >> "$GITHUB_STEP_SUMMARY"

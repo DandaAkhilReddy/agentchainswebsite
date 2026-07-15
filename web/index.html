@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Microsoft Jobs → LinkedIn</title>
+    <meta name="description" content="Today's fresh Microsoft job postings, formatted as ready-to-paste LinkedIn posts." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%9A%80%3C/text%3E%3C/svg%3E" />
+    <style>
+      :root {
+        --bg: #0b0c10;
+        --panel: #16181f;
+        --panel-2: #1d2029;
+        --border: #2a2e3a;
+        --text: #e9ecf1;
+        --muted: #9aa3b2;
+        --accent: #4c8bf5;
+        --accent-2: #34c759;
+        --code-bg: #0f1117;
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #f4f5f8;
+          --panel: #ffffff;
+          --panel-2: #f0f2f6;
+          --border: #e0e3ea;
+          --text: #14161c;
+          --muted: #5b6472;
+          --code-bg: #f6f8fb;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.5;
+      }
+      header {
+        position: sticky; top: 0; z-index: 10;
+        background: color-mix(in srgb, var(--bg) 88%, transparent);
+        backdrop-filter: blur(10px);
+        border-bottom: 1px solid var(--border);
+        padding: 16px 20px;
+      }
+      .wrap { max-width: 820px; margin: 0 auto; }
+      .bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+      h1 { font-size: 18px; margin: 0; font-weight: 700; }
+      h1 .sub { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 6px; }
+      .spacer { flex: 1; }
+      button {
+        font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid var(--border);
+        background: var(--panel-2); color: var(--text); padding: 8px 14px; transition: .15s;
+      }
+      button:hover { border-color: var(--accent); }
+      button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+      button.primary:hover { filter: brightness(1.08); }
+      select {
+        font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid var(--border);
+        background: var(--panel-2); color: var(--text); padding: 8px 12px;
+      }
+      main { max-width: 820px; margin: 0 auto; padding: 20px; }
+      .meta { color: var(--muted); font-size: 13px; margin: 4px 0 20px; }
+      .card {
+        background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+        padding: 18px; margin-bottom: 18px;
+      }
+      .card h2 { font-size: 16px; margin: 0 0 4px; }
+      .card .tags { color: var(--muted); font-size: 12.5px; margin-bottom: 12px; }
+      pre {
+        margin: 0; white-space: pre-wrap; word-wrap: break-word;
+        background: var(--code-bg); border: 1px solid var(--border); border-radius: 10px;
+        padding: 14px; font-family: "JetBrains Mono", Consolas, Menlo, monospace;
+        font-size: 12.5px; line-height: 1.55; max-height: 340px; overflow: auto;
+      }
+      .card .actions { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+      a.apply { color: var(--accent); text-decoration: none; font-size: 13px; align-self: center; }
+      a.apply:hover { text-decoration: underline; }
+      .state { text-align: center; color: var(--muted); padding: 60px 20px; }
+      .state.err { color: #ff6b6b; }
+      .badge {
+        display: inline-block; background: var(--panel-2); border: 1px solid var(--border);
+        border-radius: 999px; padding: 2px 10px; font-size: 12px; color: var(--muted);
+      }
+      .toast {
+        position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
+        background: var(--accent-2); color: #fff; padding: 10px 18px; border-radius: 10px;
+        opacity: 0; pointer-events: none; transition: .25s; font-size: 14px; font-weight: 600;
+      }
+      .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+      code.inline { background: var(--panel-2); padding: 1px 6px; border-radius: 5px; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="wrap bar">
+        <h1>🚀 Microsoft → LinkedIn <span class="sub">daily job posts, ready to paste</span></h1>
+        <div class="spacer"></div>
+        <select id="edition" title="Edition"></select>
+        <span id="count" class="badge">—</span>
+        <button id="refresh">↻ Refresh</button>
+        <button id="copyAll" class="primary">Copy all</button>
+      </div>
+    </header>
+    <main>
+      <div id="meta" class="meta"></div>
+      <div id="content"><div class="state">Loading today's postings…</div></div>
+    </main>
+    <div id="toast" class="toast">Copied!</div>
+
+    <script>
+      // API base resolution order:
+      //   1) ?api=https://your-func.azurewebsites.net/api  (query param, wins)
+      //   2) window.API_BASE injected below (edit for your deployment)
+      //   3) same-origin "/api" (works when hosted on Azure Static Web Apps w/ linked backend)
+      window.API_BASE = window.API_BASE || "";
+      const params = new URLSearchParams(location.search);
+      const API_BASE = (params.get("api") || window.API_BASE || "/api").replace(/\/$/, "");
+
+      const $ = (id) => document.getElementById(id);
+      const contentEl = $("content");
+      const metaEl = $("meta");
+      const countEl = $("count");
+      const toastEl = $("toast");
+      const editionEl = $("edition");
+      let current = null;
+      let edition = params.get("edition") || "";
+
+      function toast(msg) {
+        toastEl.textContent = msg;
+        toastEl.classList.add("show");
+        setTimeout(() => toastEl.classList.remove("show"), 1400);
+      }
+
+      async function copyText(text) {
+        try {
+          await navigator.clipboard.writeText(text);
+          toast("Copied to clipboard!");
+        } catch {
+          const ta = document.createElement("textarea");
+          ta.value = text; document.body.appendChild(ta); ta.select();
+          document.execCommand("copy"); ta.remove();
+          toast("Copied!");
+        }
+      }
+
+      function esc(s) {
+        return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+      }
+
+      function populateEditions(digest) {
+        const eds = digest.editions || [];
+        if (eds.length <= 1) { editionEl.style.display = "none"; return; }
+        editionEl.style.display = "";
+        if (editionEl.options.length !== eds.length) {
+          editionEl.innerHTML = eds
+            .map((e) => `<option value="${esc(e.key)}">${esc(e.label)}</option>`)
+            .join("");
+        }
+        editionEl.value = digest.edition || eds[0].key;
+        edition = editionEl.value;
+      }
+
+      function render(digest) {
+        current = digest;
+        populateEditions(digest);
+        countEl.textContent = (digest.count ?? digest.posts.length) + " post(s)";
+        metaEl.innerHTML =
+          `Digest for <strong>${esc(digest.date)}</strong>` +
+          (digest.generatedAt ? ` · generated ${esc(new Date(digest.generatedAt).toLocaleString())}` : "") +
+          (digest.note ? ` · <span style="color:var(--muted)">${esc(digest.note)}</span>` : "");
+
+        if (!digest.posts || digest.posts.length === 0) {
+          contentEl.innerHTML =
+            `<div class="state">No new postings in the current window.<br/>` +
+            `Try <code class="inline">${esc(API_BASE)}/run?all=1</code> or widen your <code class="inline">MSJOBS_*</code> filters.</div>`;
+          return;
+        }
+
+        contentEl.innerHTML = digest.posts
+          .map((p, i) => {
+            const j = p.job;
+            const tags = [j.primaryLocation, j.level, j.employmentType].filter(Boolean).join(" · ");
+            return `<div class="card">
+              <h2>${i + 1}. ${esc(j.title)}</h2>
+              <div class="tags">${esc(tags)}</div>
+              <pre id="post-${i}">${esc(p.text)}</pre>
+              <div class="actions">
+                <button data-copy="${i}" class="primary">📋 Copy post</button>
+                <a class="apply" href="${esc(j.url)}" target="_blank" rel="noopener">Open listing ↗</a>
+              </div>
+            </div>`;
+          })
+          .join("");
+
+        contentEl.querySelectorAll("[data-copy]").forEach((btn) => {
+          btn.addEventListener("click", () => copyText(digest.posts[+btn.dataset.copy].text));
+        });
+      }
+
+      async function load(generate) {
+        contentEl.innerHTML = `<div class="state">Loading…</div>`;
+        try {
+          const qs = new URLSearchParams();
+          if (edition) qs.set("edition", edition);
+          if (generate) qs.set("generate", "1");
+          const url = API_BASE + "/posts" + (qs.toString() ? "?" + qs.toString() : "");
+          const res = await fetch(url, { headers: { Accept: "application/json" } });
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          render(await res.json());
+        } catch (e) {
+          contentEl.innerHTML =
+            `<div class="state err">Couldn't reach the API at <code class="inline">${esc(API_BASE)}</code>.<br/>` +
+            `${esc(e.message)}<br/><br/>` +
+            `Set the endpoint with <code class="inline">?api=https://your-function-app.azurewebsites.net/api</code> ` +
+            `in the URL, or edit <code class="inline">window.API_BASE</code> in index.html.</div>`;
+          countEl.textContent = "—";
+        }
+      }
+
+      editionEl.addEventListener("change", () => { edition = editionEl.value; load(false); });
+      $("refresh").addEventListener("click", () => load(true));
+      $("copyAll").addEventListener("click", () => {
+        if (!current || !current.posts?.length) return toast("Nothing to copy");
+        const all = current.posts
+          .map((p, i) => `===== POST ${i + 1} =====\n\n${p.text}`)
+          .join("\n\n\n");
+        copyText(all);
+      });
+
+      load(false);
+    </script>
+  </body>
+</html>

@@ -1,0 +1,32 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+    "AzureWebJobsFeatureFlags": "EnableWorkerIndexing",
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+
+    "AZURE_STORAGE_CONNECTION_STRING": "UseDevelopmentStorage=true",
+    "MSJOBS_BLOB_CONTAINER": "digests",
+
+    "MSJOBS_QUERY": "Software Engineer",
+    "MSJOBS_LOCATIONS": "United States",
+    "MSJOBS_TITLE_INCLUDES": "",
+    "MSJOBS_TITLE_EXCLUDES": "Intern,Internship",
+    "MSJOBS_MAX_AGE_HOURS": "24",
+    "MSJOBS_MAX_JOBS": "15",
+    "MSJOBS_MAX_PAGES": "4",
+    "MSJOBS_SCHEDULE": "0 30 7 * * *",
+    "MSJOBS_SOURCE": "api",
+
+    "MSJOBS_INDIA_ENABLED": "true",
+    "MSJOBS_INDIA_LOCATIONS": "India",
+    "MSJOBS_INDIA_SCHEDULE": "0 30 3 * * *",
+
+    "ACS_CONNECTION_STRING": "",
+    "ACS_SENDER_ADDRESS": "",
+    "MSJOBS_EMAIL_TO": ""
+  },
+  "Host": {
+    "CORS": "*"
+  }
+}

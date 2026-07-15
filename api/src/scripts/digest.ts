@@ -94,6 +94,10 @@ async function main() {
     process.exit(1);
   }
 
+  const combined: string[] = [];
+  let totalCount = 0;
+  let date = new Date().toISOString().slice(0, 10);
+
   for (const edition of editions) {
     const { digest, totalFetched, emailed } = await runEdition(edition, cfg, {
       ignoreDedup: !args.has("--dedup"),
@@ -102,7 +106,25 @@ async function main() {
       log: (m) => console.error(`• ${m}`),
     });
     await printAndWrite(digest, totalFetched, emailed);
+    date = digest.date;
+    totalCount += digest.count;
+    digest.posts.forEach((p, i) => {
+      combined.push(
+        `===== ${digest.editionLabel} · post ${i + 1}/${digest.count} =====\n\n${p.text}`,
+      );
+    });
   }
+
+  // Combined artifacts for CI (GitHub Actions issue/email body + zero-job gate).
+  const outDir = resolve(process.cwd(), "output");
+  await mkdir(outDir, { recursive: true });
+  await writeFile(resolve(outDir, "post.txt"), combined.join("\n\n\n"), "utf8");
+  await writeFile(
+    resolve(outDir, "summary.json"),
+    JSON.stringify({ date, count: totalCount }, null, 2),
+    "utf8",
+  );
+  console.error(`\n• Total: ${totalCount} post(s) across ${editions.length} edition(s).`);
 }
 
 main().catch((err) => {

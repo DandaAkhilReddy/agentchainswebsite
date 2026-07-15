@@ -190,6 +190,51 @@ timer runs every morning (default 07:30, set `MSJOBS_SCHEDULE`), the dashboard
 shows the latest posts with Copy buttons, and `/api/run` lets you refresh on
 demand.
 
+### Deploy from CI (Azure OIDC — no local az needed)
+
+`.github/workflows/deploy-azure.yml` provisions the infra (Bicep) and deploys
+the Function App + dashboard straight from GitHub Actions, authenticating with
+Azure via **OIDC** (no passwords/publish-profiles in the repo). Note: `az login`
+is interactive, so it can't run inside a headless agent — CI (or your own
+machine) is where the Azure connection actually happens.
+
+**One-time setup** (run where you have Azure CLI, e.g. your laptop or the
+[Azure Cloud Shell](https://shell.azure.com)):
+
+```bash
+az login
+SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+TENANT_ID=$(az account show --query tenantId -o tsv)
+
+# 1. App registration + service principal
+APP_ID=$(az ad app create --display-name msjobs-deployer --query appId -o tsv)
+az ad sp create --id "$APP_ID" -o none
+
+# 2. Federated credential so GitHub Actions can log in as this app (no secret)
+az ad app federated-credential create --id "$APP_ID" --parameters '{
+  "name": "github-main",
+  "issuer": "https://token.actions.githubusercontent.com",
+  "subject": "repo:DandaAkhilReddy/agentchainswebsite:ref:refs/heads/main",
+  "audiences": ["api://AzureADTokenExchange"]
+}'
+
+# 3. Give it permission to deploy into your subscription
+az role assignment create --assignee "$APP_ID" --role Contributor \
+  --scope "/subscriptions/$SUBSCRIPTION_ID"
+
+echo "AZURE_CLIENT_ID=$APP_ID"
+echo "AZURE_TENANT_ID=$TENANT_ID"
+echo "AZURE_SUBSCRIPTION_ID=$SUBSCRIPTION_ID"
+```
+
+Add those three values as repo secrets (**Settings → Secrets and variables →
+Actions**): `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`.
+(The `subject` above pins deploys to the `main` branch — change the ref if you
+deploy from another branch.)
+
+**Deploy:** Actions → **Deploy to Azure** → **Run workflow**. It prints the
+dashboard URL + API base in the run summary.
+
 ### What gets created (all free / consumption)
 - **Storage account** — daily digests + dedup state (and the Functions runtime store)
 - **Function App** (Linux, Node 20, Consumption Y1) — timer + HTTP endpoints

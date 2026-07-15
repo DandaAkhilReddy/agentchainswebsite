@@ -49,6 +49,7 @@ jobs:
           echo "api_base=$(echo "$outputs" | jq -r '.apiBase.value')" >> "$GITHUB_OUTPUT"
           echo "swa_name=$(echo "$outputs" | jq -r '.staticWebAppName.value')" >> "$GITHUB_OUTPUT"
           echo "swa_url=$(echo "$outputs" | jq -r '.staticWebAppUrl.value')" >> "$GITHUB_OUTPUT"
+          echo "email_to=$(echo "$outputs" | jq -r '.emailTo.value')" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-node@v4
         with:
@@ -99,4 +100,5 @@ jobs:
             echo "- Dashboard: ${{ steps.infra.outputs.swa_url }}"
             echo "- API base: ${{ steps.infra.outputs.api_base }}"
             echo "- Function App: ${{ steps.infra.outputs.func_app }} (daily timers active)"
+            echo "- Daily email → ${{ steps.infra.outputs.email_to }} (via Azure Communication Services)"
           } >> "$GITHUB_STEP_SUMMARY"

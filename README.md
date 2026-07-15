@@ -240,6 +240,10 @@ dashboard URL + API base in the run summary.
 - **Function App** (Linux, Node 20, Consumption Y1) — timer + HTTP endpoints
 - **Application Insights** — logs/metrics
 - **Static Web App** (Free) — the dashboard
+- **Communication Services + Email** (Azure-managed domain) — emails the daily
+  digest automatically. Defaults to `areddy@hhamedicine.com`; override with the
+  `emailTo` Bicep param, or set `enableEmail=false` to turn email off. No DNS
+  setup — the managed `*.azurecomm.net` domain sends `DoNotReply@…` out of the box.
 
 ### Manual deploy (if you prefer step-by-step)
 ```bash

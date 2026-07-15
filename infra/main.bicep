@@ -7,6 +7,7 @@
 //   - Consumption plan (Y1)     (serverless, pay-per-execution — free grant covers this)
 //   - Linux Function App        (Node 20) hosting the timer + HTTP endpoints
 //   - Static Web App (Free)     (hosts the copy-paste dashboard)
+//   - Communication Services    (email delivery via an Azure-managed domain)
 //
 // Deploy:
 //   az group create -n rg-msjobs -l eastus2
@@ -41,12 +42,23 @@ param indiaLocations string = 'India'
 @description('India edition timer schedule (NCRONTAB). Default 09:00 IST.')
 param indiaSchedule string = '0 30 3 * * *'
 
+@description('Email the daily digest via Azure Communication Services.')
+param enableEmail bool = true
+
+@description('Where to send the daily digest email.')
+param emailTo string = 'areddy@hhamedicine.com'
+
+@description('ACS data residency for the email service.')
+param acsDataLocation string = 'United States'
+
 var suffix = uniqueString(resourceGroup().id)
 var storageName = toLower('${namePrefix}${take(suffix, 8)}')
 var funcAppName = '${namePrefix}-func-${take(suffix, 6)}'
 var planName = '${namePrefix}-plan'
 var aiName = '${namePrefix}-ai'
 var swaName = '${namePrefix}-web-${take(suffix, 6)}'
+var acsName = '${namePrefix}-acs'
+var emailName = '${namePrefix}-email'
 
 resource storage 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   name: storageName
@@ -75,6 +87,39 @@ resource plan 'Microsoft.Web/serverfarms@2023-12-01' = {
   sku: { name: 'Y1', tier: 'Dynamic' }
   properties: { reserved: true } // Linux
 }
+
+// --- Email via Azure Communication Services (managed domain: no DNS to set up) ---
+resource emailService 'Microsoft.Communication/emailServices@2023-04-01' = {
+  name: emailName
+  location: 'global'
+  properties: {
+    dataLocation: acsDataLocation
+  }
+}
+
+resource emailDomain 'Microsoft.Communication/emailServices/domains@2023-04-01' = {
+  parent: emailService
+  name: 'AzureManagedDomain'
+  location: 'global'
+  properties: {
+    domainManagement: 'AzureManaged'
+    userEngagementTracking: 'Disabled'
+  }
+}
+
+resource comms 'Microsoft.Communication/communicationServices@2023-04-01' = {
+  name: acsName
+  location: 'global'
+  properties: {
+    dataLocation: acsDataLocation
+    linkedDomains: [
+      emailDomain.id
+    ]
+  }
+}
+
+var acsConnection = comms.listKeys().primaryConnectionString
+var acsSender = 'DoNotReply@${emailDomain.properties.fromSenderDomain}'
 
 var storageConn = 'DefaultEndpointsProtocol=https;AccountName=${storage.name};EndpointSuffix=${environment().suffixes.storage};AccountKey=${storage.listKeys().keys[0].value}'
 
@@ -115,6 +160,10 @@ resource funcApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'MSJOBS_INDIA_ENABLED', value: string(indiaEnabled) }
         { name: 'MSJOBS_INDIA_LOCATIONS', value: indiaLocations }
         { name: 'MSJOBS_INDIA_SCHEDULE', value: indiaSchedule }
+        // Email delivery (Azure Communication Services)
+        { name: 'ACS_CONNECTION_STRING', value: acsConnection }
+        { name: 'ACS_SENDER_ADDRESS', value: acsSender }
+        { name: 'MSJOBS_EMAIL_TO', value: enableEmail ? emailTo : '' }
       ]
     }
     httpsOnly: true
@@ -134,3 +183,5 @@ output apiBase string = 'https://${funcApp.properties.defaultHostName}/api'
 output staticWebAppName string = swa.name
 output staticWebAppUrl string = 'https://${swa.properties.defaultHostname}'
 output storageAccount string = storage.name
+output emailSender string = acsSender
+output emailTo string = enableEmail ? emailTo : '(disabled)'
